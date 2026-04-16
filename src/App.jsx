@@ -3,7 +3,6 @@ import { useState, useEffect, useCallback } from "react";
 const SUPABASE_URL = "https://eijmcdurznanrmhkzogk.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVpam1jZHVyem5hbnJtaGt6b2drIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwNTE4MjQsImV4cCI6MjA4ODYyNzgyNH0.dK8nHFABWdQG8YjYwp3-QzbXNPjFcsDfpua3qPqHzWc";
 
-// ── Flavors ───────────────────────────────────────────────────────────────────
 const FLAVORS = [
   { id: "chocolate_chip",        name: "Chocolate Chip",                     gluten: false, vegan: false },
   { id: "salted_caramel",        name: "Salted Caramel Chocolate Chip",      gluten: false, vegan: false },
@@ -26,7 +25,6 @@ const STATUS_CONFIG = {
   levererad: { label: "Levererad", color: "#a0a0a0", bg: "#f0f0f0" },
 };
 
-// ── DB ────────────────────────────────────────────────────────────────────────
 async function dbFetch(path, opts = {}) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
     ...opts,
@@ -43,14 +41,144 @@ async function dbFetch(path, opts = {}) {
   return text ? JSON.parse(text) : null;
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
 const fmtDate = str => { if (!str) return "—"; const [y,m,d] = str.split("-"); return d&&m&&y ? `${d}/${m}/${y}` : str; };
-const getStatus  = o => o.data?.status      || o.status      || "ny";
-const getType    = o => o.data?.orderType   || o.orderType   || "order";
-const getCompany = o => o.data?.company     || o.company     || "—";
-const getContact = o => o.data?.contact     || o.contact     || "—";
-const getDate    = o => o.data?.deliveryDate|| o.deliveryDate|| "";
-const getSource  = o => o.data?.source      || "internal";
+const getStatus  = o => o.data?.status       || o.status       || "ny";
+const getType    = o => o.data?.orderType    || o.orderType    || "order";
+const getCompany = o => o.data?.company      || o.company      || "—";
+const getContact = o => o.data?.contact      || o.contact      || "—";
+const getDate    = o => o.data?.deliveryDate || o.deliveryDate || "";
+const getSource  = o => o.data?.source       || "internal";
+
+// ── Print följesedel ──────────────────────────────────────────────────────────
+function printFolljesedel(order) {
+  const d = order.data || order;
+  const flavors = d.flavorBreakdown
+    ? Object.entries(d.flavorBreakdown).filter(([,q]) => parseInt(q) > 0)
+    : [];
+
+  const flavorRows = flavors.map(([name, qty]) => `
+    <tr>
+      <td style="padding:10px 0;border-bottom:1px solid #f0e8d8;font-size:14px;color:#3d2b1a;font-family:Georgia,serif;">${name}</td>
+      <td style="padding:10px 0;border-bottom:1px solid #f0e8d8;text-align:right;font-size:14px;color:#9b7048;font-weight:bold;">${qty} st</td>
+    </tr>`).join("");
+
+  const html = `<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <title>Följesedel – ${d.company || ""} – #${order.id}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=Lato:wght@400;700&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #fdf8f0; font-family: 'Lato', sans-serif; padding: 48px; color: #3d2b1a; }
+    @media print {
+      body { padding: 0; background: white; }
+      .no-print { display: none !important; }
+      @page { margin: 20mm; }
+    }
+    .page { max-width: 680px; margin: 0 auto; }
+    .header { background: #3d2b1a; border-radius: 16px 16px 0 0; padding: 36px 40px; display: flex; justify-content: space-between; align-items: flex-end; }
+    .header-left h1 { font-family: 'Playfair Display', serif; font-size: 28px; font-weight: 900; color: white; letter-spacing: 1px; }
+    .header-left p { font-size: 11px; color: #c9a87a; letter-spacing: 3px; text-transform: uppercase; margin-top: 4px; }
+    .header-right { text-align: right; }
+    .header-right .order-num { font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 700; color: white; }
+    .header-right .order-date { font-size: 12px; color: #c9a87a; margin-top: 4px; }
+    .body { background: white; padding: 40px; border-left: 1px solid #f0e8d8; border-right: 1px solid #f0e8d8; }
+    .section-label { font-size: 11px; color: #9b7048; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; margin-bottom: 6px; }
+    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 32px; }
+    .info-box { background: #fdf8f0; border-radius: 10px; padding: 14px 18px; }
+    .info-box .val { font-size: 16px; font-weight: 700; color: #3d2b1a; margin-top: 4px; }
+    .divider { border: none; border-top: 2px solid #f0e8d8; margin: 24px 0; }
+    .flavors-title { font-family: 'Playfair Display', serif; font-size: 18px; font-weight: 700; color: #3d2b1a; margin-bottom: 12px; }
+    table { width: 100%; border-collapse: collapse; }
+    .total-row { display: flex; justify-content: space-between; align-items: center; background: #fdf8f0; border-radius: 10px; padding: 16px 20px; margin-top: 24px; }
+    .total-row .total-label { font-size: 12px; color: #9b7048; text-transform: uppercase; letter-spacing: 1px; }
+    .total-row .total-val { font-family: 'Playfair Display', serif; font-size: 26px; font-weight: 900; color: #c97c3a; }
+    .notes-box { background: #fdf6ec; border-left: 3px solid #c97c3a; border-radius: 0 8px 8px 0; padding: 14px 18px; margin-top: 24px; }
+    .footer { background: #f5ede0; border-radius: 0 0 16px 16px; border: 1px solid #f0e8d8; padding: 24px 40px; display: flex; justify-content: space-between; align-items: center; }
+    .footer p { font-size: 12px; color: #9b7048; }
+    .footer .heat { font-size: 13px; color: #c97c3a; font-weight: 700; }
+    .print-btn { display: block; margin: 24px auto 0; padding: 14px 32px; background: #3d2b1a; color: white; border: none; border-radius: 12px; font-family: 'Lato', sans-serif; font-weight: 700; font-size: 15px; cursor: pointer; }
+    .print-btn:hover { background: #5a3f26; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="header">
+      <div class="header-left">
+        <h1>KJ's Cookies</h1>
+        <p>Följesedel</p>
+      </div>
+      <div class="header-right">
+        <div class="order-num">Order #${order.id}</div>
+        <div class="order-date">Utskriven: ${new Date().toLocaleDateString("sv-SE")}</div>
+      </div>
+    </div>
+
+    <div class="body">
+      <div class="info-grid">
+        <div class="info-box">
+          <div class="section-label">Företag</div>
+          <div class="val">${d.company || "—"}</div>
+        </div>
+        <div class="info-box">
+          <div class="section-label">Kontakt</div>
+          <div class="val">${d.contact || "—"}</div>
+        </div>
+        <div class="info-box">
+          <div class="section-label">Leveransdatum</div>
+          <div class="val">${fmtDate(d.deliveryDate)}</div>
+        </div>
+        <div class="info-box">
+          <div class="section-label">Typ</div>
+          <div class="val">${d.orderType === "subscription" ? "Abonnemang" : "Engångsbeställning"}</div>
+        </div>
+      </div>
+
+      ${flavors.length > 0 ? `
+      <hr class="divider">
+      <div class="flavors-title">Innehåll</div>
+      <table>
+        <tbody>${flavorRows}</tbody>
+      </table>` : ""}
+
+      ${d.productName ? `
+      <hr class="divider">
+      <div class="section-label">Produkt</div>
+      <div style="font-size:16px;font-weight:700;color:#3d2b1a;margin-top:6px;">${d.productName}</div>` : ""}
+
+      ${d.price ? `
+      <div class="total-row">
+        <div>
+          <div class="total-label">Totalt (exkl. moms)</div>
+        </div>
+        <div class="total-val">${Number(d.price).toLocaleString("sv-SE")} kr</div>
+      </div>` : ""}
+
+      ${d.notes ? `
+      <div class="notes-box">
+        <div class="section-label">Anteckningar</div>
+        <div style="font-size:14px;color:#3d2b1a;margin-top:6px;">${d.notes}</div>
+      </div>` : ""}
+    </div>
+
+    <div class="footer">
+      <div>
+        <p>KJ's Cookies · Ninni Kronbergs Gata 8 · Hagastaden, Stockholm</p>
+        <p style="margin-top:4px;">hello@kjscookies.se · @kjscookieclub</p>
+      </div>
+      <div class="heat">Värm i ugn 175° i 4–5 min 🍪</div>
+    </div>
+
+    <button class="print-btn no-print" onclick="window.print()">🖨️ Skriv ut</button>
+  </div>
+</body>
+</html>`;
+
+  const win = window.open("", "_blank");
+  win.document.write(html);
+  win.document.close();
+}
 
 // ── DbStatus ──────────────────────────────────────────────────────────────────
 function DbStatus({ connected }) {
@@ -82,7 +210,6 @@ function OrderDetail({ order, onClose, onUpdate, inventory, setInventory }) {
 
       const flavors = d.flavorBreakdown ? Object.entries(d.flavorBreakdown).filter(([,q]) => parseInt(q) > 0) : [];
 
-      // Deduct when moving TO bekräftad
       if (newStatus === "bekraftad" && status !== "bekraftad") {
         for (const [flavorName, qty] of flavors) {
           const flavorId = FLAVORS.find(f => f.name === flavorName)?.id;
@@ -92,7 +219,6 @@ function OrderDetail({ order, onClose, onUpdate, inventory, setInventory }) {
           setInventory(prev => ({ ...prev, [flavorId]: newStock }));
         }
       }
-      // Re-add when moving AWAY from bekräftad
       if (status === "bekraftad" && newStatus !== "bekraftad") {
         for (const [flavorName, qty] of flavors) {
           const flavorId = FLAVORS.find(f => f.name === flavorName)?.id;
@@ -119,10 +245,15 @@ function OrderDetail({ order, onClose, onUpdate, inventory, setInventory }) {
             <div style={{ fontFamily:"'Playfair Display',serif", fontSize:20, fontWeight:700, color:"white" }}>{d.company||"—"}</div>
             <div style={{ fontSize:12, color:"#c9a87a", marginTop:2 }}>Order #{order.id} · {fmtDate(d.createdAt||d.created_at)}</div>
           </div>
-          <button onClick={onClose} style={{ background:"none", border:"none", color:"#c9a87a", fontSize:24, cursor:"pointer" }}>×</button>
+          <div style={{ display:"flex", gap:10, alignItems:"center" }}>
+            <button onClick={() => printFolljesedel(order)}
+              style={{ background:"#c97c3a", border:"none", borderRadius:10, color:"white", padding:"8px 14px", fontFamily:"'Lato',sans-serif", fontWeight:700, fontSize:12, cursor:"pointer" }}>
+              🖨️ Följesedel
+            </button>
+            <button onClick={onClose} style={{ background:"none", border:"none", color:"#c9a87a", fontSize:24, cursor:"pointer" }}>×</button>
+          </div>
         </div>
         <div style={{ padding:28 }}>
-          {/* Status */}
           <div style={{ marginBottom:24 }}>
             <div style={{ fontSize:11, color:"#9b7048", textTransform:"uppercase", letterSpacing:1, marginBottom:10, fontFamily:"'Lato',sans-serif" }}>
               Status
@@ -137,7 +268,7 @@ function OrderDetail({ order, onClose, onUpdate, inventory, setInventory }) {
               ))}
             </div>
           </div>
-          {/* Info grid */}
+
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14, marginBottom:20 }}>
             {[["Kontakt",d.contact],["E-post",d.email],["Leveransdatum",fmtDate(d.deliveryDate)],["Typ",d.orderType==="subscription"?"Abonnemang":"Engång"]].map(([label,val]) => (
               <div key={label} style={{ background:"#fdf8f0", borderRadius:10, padding:"12px 16px" }}>
@@ -146,11 +277,12 @@ function OrderDetail({ order, onClose, onUpdate, inventory, setInventory }) {
               </div>
             ))}
           </div>
+
           {d.productName && <div style={{ background:"#fdf8f0", borderRadius:10, padding:"12px 16px", marginBottom:16 }}>
             <div style={{ fontSize:11, color:"#9b7048", textTransform:"uppercase", letterSpacing:1, marginBottom:4, fontFamily:"'Lato',sans-serif" }}>Produkt</div>
             <div style={{ fontSize:14, color:"#3d2b1a", fontWeight:600 }}>{d.productName}</div>
           </div>}
-          {/* Flavors with inventory context */}
+
           {flavors.length > 0 && (
             <div style={{ marginBottom:16 }}>
               <div style={{ fontSize:11, color:"#9b7048", textTransform:"uppercase", letterSpacing:1, marginBottom:8, fontFamily:"'Lato',sans-serif" }}>Smaker / Frysbollar</div>
@@ -162,7 +294,7 @@ function OrderDetail({ order, onClose, onUpdate, inventory, setInventory }) {
                   <div key={flavor} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 0", borderBottom:"1px solid #f0e8d8" }}>
                     <span style={{ fontSize:14, color:"#3d2b1a" }}>{flavor}</span>
                     <div style={{ display:"flex", gap:16, alignItems:"center" }}>
-                      {inStock !== null && <span style={{ fontSize:12, color: willBeShort ? "#e8806d" : "#9b7048" }}>i frys: {inStock} st{willBeShort ? " ⚠️" : ""}</span>}
+                      {inStock !== null && <span style={{ fontSize:12, color: willBeShort?"#e8806d":"#9b7048" }}>i frys: {inStock} st{willBeShort?" ⚠️":""}</span>}
                       <span style={{ fontSize:14, color:"#9b7048", fontWeight:700 }}>−{qty} st</span>
                     </div>
                   </div>
@@ -170,10 +302,12 @@ function OrderDetail({ order, onClose, onUpdate, inventory, setInventory }) {
               })}
             </div>
           )}
+
           {d.price && <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", background:"#fdf8f0", borderRadius:10, padding:"14px 16px", marginBottom:16 }}>
             <span style={{ fontSize:13, color:"#9b7048" }}>Totalt (exkl. moms)</span>
             <span style={{ fontFamily:"'Playfair Display',serif", fontSize:22, fontWeight:700, color:"#c97c3a" }}>{Number(d.price).toLocaleString("sv-SE")} kr</span>
           </div>}
+
           {d.notes && <div style={{ background:"#fdf6ec", borderLeft:"3px solid #c97c3a", borderRadius:"0 8px 8px 0", padding:"12px 16px" }}>
             <div style={{ fontSize:11, color:"#9b7048", textTransform:"uppercase", letterSpacing:1, marginBottom:4, fontFamily:"'Lato',sans-serif" }}>Anteckningar</div>
             <div style={{ fontSize:14, color:"#3d2b1a" }}>{d.notes}</div>
@@ -269,7 +403,6 @@ function FrysbollarTab({ inventory, setInventory }) {
 
   return (
     <div className="fade-in">
-      {/* Stats */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:16, marginBottom:28 }}>
         {[
           { label:"Totalt i frys", val:`${total} st`, color:"#c97c3a" },
@@ -418,7 +551,6 @@ export default function App() {
 
       {notif && <div style={{ position:"fixed", top:20, right:20, zIndex:300, background:notif.type==="error"?"#ffe7e7":"#e7fded", color:notif.type==="error"?"#c0392b":"#1e7e34", border:`1px solid ${notif.type==="error"?"#f5c6c6":"#b8e6c4"}`, borderRadius:12, padding:"12px 20px", fontFamily:"'Lato',sans-serif", fontSize:14, fontWeight:700, boxShadow:"0 4px 24px rgba(0,0,0,0.1)" }}>{notif.msg}</div>}
 
-      {/* Header */}
       <div style={{ background:"#3d2b1a", padding:"0 32px", position:"sticky", top:0, zIndex:50 }}>
         <div style={{ maxWidth:1200, margin:"0 auto", display:"flex", alignItems:"center", justifyContent:"space-between", height:72 }}>
           <div style={{ display:"flex", alignItems:"center", gap:32 }}>
@@ -447,9 +579,7 @@ export default function App() {
       </div>
 
       <div style={{ maxWidth:1200, margin:"0 auto", padding:"32px 24px" }}>
-
         {tab==="orders" && <div className="fade-in">
-          {/* Stats */}
           <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:16, marginBottom:32 }}>
             {[{label:"Totalt",val:stats.total,color:"#c97c3a"},{label:"Aktiva",val:stats.active,color:"#6d9ee8"},{label:"Bakas nu",val:stats.bakas,color:"#e8806d"},{label:"Klara",val:stats.klar,color:"#6dc87e"},{label:"Från kunder",val:stats.customer,color:"#9b7048"}].map(s=>(
               <div key={s.label} style={{ background:"white", borderRadius:16, padding:"20px 24px", boxShadow:"0 2px 16px rgba(180,120,60,0.08)", border:"1px solid #f0e8d8" }}>
@@ -459,7 +589,6 @@ export default function App() {
             ))}
           </div>
 
-          {/* Filters */}
           <div style={{ display:"flex", gap:12, marginBottom:20, flexWrap:"wrap", alignItems:"center" }}>
             <input type="text" placeholder="🔍 Sök företag eller kontakt..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)}
               style={{ padding:"10px 16px", border:"2px solid #eadfc8", borderRadius:10, fontSize:14, color:"#3d2b1a", background:"white", outline:"none", minWidth:260 }} />
@@ -482,7 +611,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Table */}
           <div style={{ background:"white", borderRadius:16, boxShadow:"0 2px 16px rgba(180,120,60,0.08)", border:"1px solid #f0e8d8", overflow:"hidden" }}>
             <div style={{ padding:"16px 24px", borderBottom:"2px solid #f5ede0" }}>
               <span style={{ fontFamily:"'Playfair Display',serif", fontSize:18, fontWeight:700, color:"#3d2b1a" }}>Beställningar {filtered.length>0&&`(${filtered.length})`}</span>
