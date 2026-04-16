@@ -49,6 +49,166 @@ const getContact = o => o.data?.contact      || o.contact      || "—";
 const getDate    = o => o.data?.deliveryDate || o.deliveryDate || "";
 const getSource  = o => o.data?.source       || "internal";
 
+// ── Generate default confirmation email HTML ──────────────────────────────────
+function generateConfirmationHtml(order) {
+  const d = order.data || order;
+  const flavors = d.flavorBreakdown
+    ? Object.entries(d.flavorBreakdown).filter(([,q]) => parseInt(q) > 0)
+    : [];
+
+  const flavorRows = flavors.map(([name, qty]) => `
+    <tr>
+      <td style="padding:8px 0;border-bottom:1px solid #f0e8d8;font-size:14px;color:#3d2b1a;">${name}</td>
+      <td style="padding:8px 0;border-bottom:1px solid #f0e8d8;text-align:right;font-size:14px;color:#9b7048;font-weight:bold;">${qty} st</td>
+    </tr>`).join("");
+
+  return `<!DOCTYPE html>
+<html lang="sv">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#fdf8f0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#fdf8f0;padding:48px 24px;">
+  <tr><td align="center">
+  <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+    <tr>
+      <td style="background:#3d2b1a;border-radius:16px 16px 0 0;padding:36px 40px;text-align:center;">
+        <p style="margin:0 0 4px;font-family:Georgia,serif;font-size:28px;font-weight:700;color:#fff;letter-spacing:1px;">KJ's Cookies</p>
+        <p style="margin:0;font-size:11px;color:#c9a87a;letter-spacing:3px;text-transform:uppercase;">Orderbekräftelse</p>
+      </td>
+    </tr>
+    <tr>
+      <td style="background:#fff;padding:40px;border-left:1px solid #f0e8d8;border-right:1px solid #f0e8d8;">
+        <p style="margin:0 0 8px;font-family:Georgia,serif;font-size:22px;font-weight:700;color:#3d2b1a;">Hej ${d.contact || ""}!</p>
+        <p style="margin:0 0 32px;font-size:15px;color:#9b7048;line-height:1.6;">Vi bekräftar härmed din beställning från <strong style="color:#3d2b1a;">${d.company || ""}</strong>. Din order är nu bekräftad och under förberedelse.</p>
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:#fdf8f0;border-radius:10px;padding:20px;margin-bottom:32px;">
+          <tr>
+            <td style="font-size:11px;color:#9b7048;text-transform:uppercase;letter-spacing:1px;padding-bottom:4px;">Leveransdatum</td>
+            <td style="font-size:11px;color:#9b7048;text-transform:uppercase;letter-spacing:1px;padding-bottom:4px;text-align:right;">Order #${order.id}</td>
+          </tr>
+          <tr>
+            <td style="font-family:Georgia,serif;font-size:20px;font-weight:700;color:#3d2b1a;">${fmtDate(d.deliveryDate)}</td>
+            <td style="font-family:Georgia,serif;font-size:20px;font-weight:700;color:#3d2b1a;text-align:right;">${d.productName || ""}</td>
+          </tr>
+          ${d.price ? `<tr>
+            <td colspan="2" style="padding-top:16px;border-top:1px solid #f0e8d8;">
+              <span style="font-size:11px;color:#9b7048;text-transform:uppercase;letter-spacing:1px;">Totalt (exkl. moms)</span>
+              <span style="font-family:Georgia,serif;font-size:22px;font-weight:700;color:#c97c3a;margin-left:16px;">${Number(d.price).toLocaleString("sv-SE")} kr</span>
+            </td>
+          </tr>` : ""}
+        </table>
+        ${flavors.length > 0 ? `
+        <p style="margin:0 0 10px;font-size:11px;color:#9b7048;text-transform:uppercase;letter-spacing:1px;font-weight:700;">Smaker</p>
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">${flavorRows}</table>` : ""}
+        ${d.notes ? `
+        <div style="background:#fdf6ec;border-left:3px solid #c97c3a;border-radius:0 8px 8px 0;padding:14px 18px;margin-bottom:28px;">
+          <p style="margin:0 0 4px;font-size:11px;color:#9b7048;text-transform:uppercase;letter-spacing:1px;">Anteckningar</p>
+          <p style="margin:0;font-size:14px;color:#3d2b1a;">${d.notes}</p>
+        </div>` : ""}
+        <p style="margin:0;font-size:14px;color:#9b7048;line-height:1.6;">Frågor? Hör gärna av dig till oss på <a href="mailto:hello@kjscookies.se" style="color:#c97c3a;font-weight:600;text-decoration:none;">hello@kjscookies.se</a></p>
+      </td>
+    </tr>
+    <tr>
+      <td style="background:#f5ede0;border-radius:0 0 16px 16px;border:1px solid #f0e8d8;padding:24px 40px;text-align:center;">
+        <p style="margin:0 0 4px;font-size:12px;color:#9b7048;">KJ's Cookies · Ninni Kronbergs Gata 8 · Hagastaden, Stockholm</p>
+        <p style="margin:0;font-size:11px;color:#c9a87a;letter-spacing:1px;">@kjscookieclub</p>
+      </td>
+    </tr>
+  </table>
+  </td></tr>
+</table>
+</body>
+</html>`;
+}
+
+// ── Confirmation email modal ───────────────────────────────────────────────────
+function ConfirmEmailModal({ order, onClose, onSent }) {
+  const d = order.data || order;
+  const [subject, setSubject] = useState(`Orderbekräftelse – KJ's Cookies (#${order.id})`);
+  const [htmlBody, setHtmlBody] = useState(generateConfirmationHtml(order));
+  const [sending, setSending] = useState(false);
+  const [preview, setPreview] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function handleSend() {
+    setSending(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to: d.email, subject, html: htmlBody }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed");
+      onSent();
+      onClose();
+    } catch(e) {
+      setError(e.message);
+    }
+    setSending(false);
+  }
+
+  const inp = { fontFamily:"'Lato',sans-serif", fontSize:14, padding:"10px 14px", border:"2px solid #eadfc8", borderRadius:10, width:"100%", boxSizing:"border-box", color:"#3d2b1a", background:"white", outline:"none" };
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(61,43,26,0.55)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
+      <div style={{ background:"white", borderRadius:20, width:"100%", maxWidth:680, maxHeight:"92vh", overflowY:"auto", boxShadow:"0 24px 80px rgba(61,43,26,0.3)" }}>
+        {/* Header */}
+        <div style={{ background:"#3d2b1a", borderRadius:"20px 20px 0 0", padding:"24px 28px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          <div>
+            <div style={{ fontFamily:"'Playfair Display',serif", fontSize:18, fontWeight:700, color:"white" }}>Skicka bekräftelse</div>
+            <div style={{ fontSize:12, color:"#c9a87a", marginTop:2 }}>Till: {d.email || "—"} · {d.contact}</div>
+          </div>
+          <button onClick={onClose} style={{ background:"none", border:"none", color:"#c9a87a", fontSize:24, cursor:"pointer" }}>×</button>
+        </div>
+
+        <div style={{ padding:28 }}>
+          {/* Subject */}
+          <div style={{ marginBottom:16 }}>
+            <div style={{ fontSize:11, color:"#9b7048", textTransform:"uppercase", letterSpacing:1, marginBottom:6, fontFamily:"'Lato',sans-serif" }}>Ämnesrad</div>
+            <input value={subject} onChange={e => setSubject(e.target.value)} style={inp} />
+          </div>
+
+          {/* Toggle preview/edit */}
+          <div style={{ display:"flex", gap:8, marginBottom:16 }}>
+            <button onClick={() => setPreview(false)}
+              style={{ padding:"7px 16px", borderRadius:20, border:`2px solid ${!preview?"#3d2b1a":"#eadfc8"}`, background:!preview?"#3d2b1a":"white", color:!preview?"white":"#9b7048", fontFamily:"'Lato',sans-serif", fontWeight:700, fontSize:12, cursor:"pointer" }}>
+              ✏️ Redigera HTML
+            </button>
+            <button onClick={() => setPreview(true)}
+              style={{ padding:"7px 16px", borderRadius:20, border:`2px solid ${preview?"#3d2b1a":"#eadfc8"}`, background:preview?"#3d2b1a":"white", color:preview?"white":"#9b7048", fontFamily:"'Lato',sans-serif", fontWeight:700, fontSize:12, cursor:"pointer" }}>
+              👁 Förhandsgranska
+            </button>
+          </div>
+
+          {/* Edit or preview */}
+          {!preview ? (
+            <div style={{ marginBottom:20 }}>
+              <div style={{ fontSize:11, color:"#9b7048", textTransform:"uppercase", letterSpacing:1, marginBottom:6, fontFamily:"'Lato',sans-serif" }}>E-postinnehåll (HTML)</div>
+              <textarea value={htmlBody} onChange={e => setHtmlBody(e.target.value)}
+                rows={14} style={{ ...inp, resize:"vertical", fontFamily:"monospace", fontSize:12, lineHeight:1.5 }} />
+            </div>
+          ) : (
+            <div style={{ marginBottom:20, border:"2px solid #eadfc8", borderRadius:12, overflow:"hidden" }}>
+              <iframe srcDoc={htmlBody} style={{ width:"100%", height:480, border:"none" }} title="Email preview" />
+            </div>
+          )}
+
+          {error && <div style={{ background:"#ffe7e7", color:"#c0392b", borderRadius:10, padding:"10px 16px", marginBottom:16, fontSize:13, fontFamily:"'Lato',sans-serif" }}>⚠️ {error}</div>}
+
+          <div style={{ display:"flex", gap:10 }}>
+            <button onClick={onClose} style={{ flex:1, padding:"12px 0", background:"white", border:"2px solid #eadfc8", borderRadius:10, color:"#9b7048", fontFamily:"'Lato',sans-serif", fontWeight:700, cursor:"pointer" }}>Avbryt</button>
+            <button onClick={handleSend} disabled={sending||!d.email}
+              style={{ flex:2, padding:"12px 0", background:"#3d2b1a", border:"none", borderRadius:10, color:"white", fontFamily:"'Lato',sans-serif", fontWeight:700, cursor:"pointer", opacity:sending?0.6:1 }}>
+              {sending ? "Skickar..." : `📧 Skicka till ${d.email||"—"}`}
+            </button>
+          </div>
+          {!d.email && <div style={{ fontSize:12, color:"#e8806d", marginTop:8, fontFamily:"'Lato',sans-serif" }}>⚠️ Den här ordern har ingen e-postadress registrerad.</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Print följesedel ──────────────────────────────────────────────────────────
 function printFolljesedel(order) {
   const d = order.data || order;
@@ -66,110 +226,54 @@ function printFolljesedel(order) {
 <html lang="sv">
 <head>
   <meta charset="UTF-8">
-  <title>Följesedel – ${d.company || ""} – #${order.id}</title>
+  <title>Följesedel – ${d.company||""} – #${order.id}</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=Lato:wght@400;700&display=swap');
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #fdf8f0; font-family: 'Lato', sans-serif; padding: 48px; color: #3d2b1a; }
-    @media print {
-      body { padding: 0; background: white; }
-      .no-print { display: none !important; }
-      @page { margin: 20mm; }
-    }
-    .page { max-width: 680px; margin: 0 auto; }
-    .header { background: #3d2b1a; border-radius: 16px 16px 0 0; padding: 36px 40px; display: flex; justify-content: space-between; align-items: flex-end; }
-    .header-left h1 { font-family: 'Playfair Display', serif; font-size: 28px; font-weight: 900; color: white; letter-spacing: 1px; }
-    .header-left p { font-size: 11px; color: #c9a87a; letter-spacing: 3px; text-transform: uppercase; margin-top: 4px; }
-    .header-right { text-align: right; }
-    .header-right .order-num { font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 700; color: white; }
-    .header-right .order-date { font-size: 12px; color: #c9a87a; margin-top: 4px; }
-    .body { background: white; padding: 40px; border-left: 1px solid #f0e8d8; border-right: 1px solid #f0e8d8; }
-    .section-label { font-size: 11px; color: #9b7048; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; margin-bottom: 6px; }
-    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 32px; }
-    .info-box { background: #fdf8f0; border-radius: 10px; padding: 14px 18px; }
-    .info-box .val { font-size: 16px; font-weight: 700; color: #3d2b1a; margin-top: 4px; }
-    .divider { border: none; border-top: 2px solid #f0e8d8; margin: 24px 0; }
-    .flavors-title { font-family: 'Playfair Display', serif; font-size: 18px; font-weight: 700; color: #3d2b1a; margin-bottom: 12px; }
-    table { width: 100%; border-collapse: collapse; }
-    .total-row { display: flex; justify-content: space-between; align-items: center; background: #fdf8f0; border-radius: 10px; padding: 16px 20px; margin-top: 24px; }
-    .total-row .total-label { font-size: 12px; color: #9b7048; text-transform: uppercase; letter-spacing: 1px; }
-    .total-row .total-val { font-family: 'Playfair Display', serif; font-size: 26px; font-weight: 900; color: #c97c3a; }
-    .notes-box { background: #fdf6ec; border-left: 3px solid #c97c3a; border-radius: 0 8px 8px 0; padding: 14px 18px; margin-top: 24px; }
-    .footer { background: #f5ede0; border-radius: 0 0 16px 16px; border: 1px solid #f0e8d8; padding: 24px 40px; display: flex; justify-content: space-between; align-items: center; }
-    .footer p { font-size: 12px; color: #9b7048; }
-    .footer .heat { font-size: 13px; color: #c97c3a; font-weight: 700; }
-    .print-btn { display: block; margin: 24px auto 0; padding: 14px 32px; background: #3d2b1a; color: white; border: none; border-radius: 12px; font-family: 'Lato', sans-serif; font-weight: 700; font-size: 15px; cursor: pointer; }
-    .print-btn:hover { background: #5a3f26; }
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{background:#fdf8f0;font-family:'Lato',sans-serif;padding:48px;color:#3d2b1a;}
+    @media print{body{padding:0;background:white;}.no-print{display:none!important;}@page{margin:20mm;}}
+    .page{max-width:680px;margin:0 auto;}
+    .header{background:#3d2b1a;border-radius:16px 16px 0 0;padding:36px 40px;display:flex;justify-content:space-between;align-items:flex-end;}
+    .header h1{font-family:'Playfair Display',serif;font-size:28px;font-weight:900;color:white;letter-spacing:1px;}
+    .header p{font-size:11px;color:#c9a87a;letter-spacing:3px;text-transform:uppercase;margin-top:4px;}
+    .header .order-num{font-family:'Playfair Display',serif;font-size:22px;font-weight:700;color:white;}
+    .header .order-date{font-size:12px;color:#c9a87a;margin-top:4px;}
+    .body{background:white;padding:40px;border-left:1px solid #f0e8d8;border-right:1px solid #f0e8d8;}
+    .label{font-size:11px;color:#9b7048;text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-bottom:6px;}
+    .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:32px;}
+    .info-box{background:#fdf8f0;border-radius:10px;padding:14px 18px;}
+    .info-box .val{font-size:16px;font-weight:700;color:#3d2b1a;margin-top:4px;}
+    hr{border:none;border-top:2px solid #f0e8d8;margin:24px 0;}
+    table{width:100%;border-collapse:collapse;}
+    .total-row{display:flex;justify-content:space-between;align-items:center;background:#fdf8f0;border-radius:10px;padding:16px 20px;margin-top:24px;}
+    .notes-box{background:#fdf6ec;border-left:3px solid #c97c3a;border-radius:0 8px 8px 0;padding:14px 18px;margin-top:24px;}
+    .footer{background:#f5ede0;border-radius:0 0 16px 16px;border:1px solid #f0e8d8;padding:24px 40px;display:flex;justify-content:space-between;align-items:center;}
+    .footer p{font-size:12px;color:#9b7048;}
+    .print-btn{display:block;margin:24px auto 0;padding:14px 32px;background:#3d2b1a;color:white;border:none;border-radius:12px;font-family:'Lato',sans-serif;font-weight:700;font-size:15px;cursor:pointer;}
   </style>
 </head>
 <body>
   <div class="page">
     <div class="header">
-      <div class="header-left">
-        <h1>KJ's Cookies</h1>
-        <p>Följesedel</p>
-      </div>
-      <div class="header-right">
-        <div class="order-num">Order #${order.id}</div>
-        <div class="order-date">Utskriven: ${new Date().toLocaleDateString("sv-SE")}</div>
-      </div>
+      <div><h1>KJ's Cookies</h1><p>Följesedel</p></div>
+      <div style="text-align:right"><div class="order-num">Order #${order.id}</div><div class="order-date">Utskriven: ${new Date().toLocaleDateString("sv-SE")}</div></div>
     </div>
-
     <div class="body">
       <div class="info-grid">
-        <div class="info-box">
-          <div class="section-label">Företag</div>
-          <div class="val">${d.company || "—"}</div>
-        </div>
-        <div class="info-box">
-          <div class="section-label">Kontakt</div>
-          <div class="val">${d.contact || "—"}</div>
-        </div>
-        <div class="info-box">
-          <div class="section-label">Leveransdatum</div>
-          <div class="val">${fmtDate(d.deliveryDate)}</div>
-        </div>
-        <div class="info-box">
-          <div class="section-label">Typ</div>
-          <div class="val">${d.orderType === "subscription" ? "Abonnemang" : "Engångsbeställning"}</div>
-        </div>
+        <div class="info-box"><div class="label">Företag</div><div class="val">${d.company||"—"}</div></div>
+        <div class="info-box"><div class="label">Kontakt</div><div class="val">${d.contact||"—"}</div></div>
+        <div class="info-box"><div class="label">Leveransdatum</div><div class="val">${fmtDate(d.deliveryDate)}</div></div>
+        <div class="info-box"><div class="label">Typ</div><div class="val">${d.orderType==="subscription"?"Abonnemang":"Engångsbeställning"}</div></div>
       </div>
-
-      ${flavors.length > 0 ? `
-      <hr class="divider">
-      <div class="flavors-title">Innehåll</div>
-      <table>
-        <tbody>${flavorRows}</tbody>
-      </table>` : ""}
-
-      ${d.productName ? `
-      <hr class="divider">
-      <div class="section-label">Produkt</div>
-      <div style="font-size:16px;font-weight:700;color:#3d2b1a;margin-top:6px;">${d.productName}</div>` : ""}
-
-      ${d.price ? `
-      <div class="total-row">
-        <div>
-          <div class="total-label">Totalt (exkl. moms)</div>
-        </div>
-        <div class="total-val">${Number(d.price).toLocaleString("sv-SE")} kr</div>
-      </div>` : ""}
-
-      ${d.notes ? `
-      <div class="notes-box">
-        <div class="section-label">Anteckningar</div>
-        <div style="font-size:14px;color:#3d2b1a;margin-top:6px;">${d.notes}</div>
-      </div>` : ""}
+      ${flavors.length>0?`<hr><div style="font-family:'Playfair Display',serif;font-size:18px;font-weight:700;color:#3d2b1a;margin-bottom:12px;">Innehåll</div><table><tbody>${flavorRows}</tbody></table>`:""}
+      ${d.productName?`<hr><div class="label">Produkt</div><div style="font-size:16px;font-weight:700;color:#3d2b1a;margin-top:6px;">${d.productName}</div>`:""}
+      ${d.price?`<div class="total-row"><div><div class="label">Totalt (exkl. moms)</div></div><div style="font-family:'Playfair Display',serif;font-size:26px;font-weight:900;color:#c97c3a;">${Number(d.price).toLocaleString("sv-SE")} kr</div></div>`:""}
+      ${d.notes?`<div class="notes-box"><div class="label">Anteckningar</div><div style="font-size:14px;color:#3d2b1a;margin-top:6px;">${d.notes}</div></div>`:""}
     </div>
-
     <div class="footer">
-      <div>
-        <p>KJ's Cookies · Ninni Kronbergs Gata 8 · Hagastaden, Stockholm</p>
-        <p style="margin-top:4px;">hello@kjscookies.se · @kjscookieclub</p>
-      </div>
-      <div class="heat">Värm i ugn 175° i 4–5 min 🍪</div>
+      <div><p>KJ's Cookies · Ninni Kronbergs Gata 8 · Hagastaden, Stockholm</p><p style="margin-top:4px;">hello@kjscookies.se · @kjscookieclub</p></div>
+      <div style="font-size:13px;color:#c97c3a;font-weight:700;">Värm i ugn 175° i 4–5 min 🍪</div>
     </div>
-
     <button class="print-btn no-print" onclick="window.print()">🖨️ Skriv ut</button>
   </div>
 </body>
@@ -180,7 +284,6 @@ function printFolljesedel(order) {
   win.document.close();
 }
 
-// ── DbStatus ──────────────────────────────────────────────────────────────────
 function DbStatus({ connected }) {
   return (
     <div style={{ display:"flex", alignItems:"center", gap:6, fontFamily:"'Lato',sans-serif", fontSize:12, color: connected?"#6dc87e":"#e8806d" }}>
@@ -196,13 +299,27 @@ function StatusBadge({ status }) {
 }
 
 // ── Order detail ──────────────────────────────────────────────────────────────
-function OrderDetail({ order, onClose, onUpdate, inventory, setInventory }) {
+function OrderDetail({ order, onClose, onUpdate, inventory, setInventory, notify }) {
   const d = order.data || order;
   const [status, setStatus] = useState(getStatus(order));
   const [saving, setSaving] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [pendingStatus, setPendingStatus] = useState(null);
 
   async function saveStatus(newStatus) {
     if (newStatus === status) return;
+
+    // If moving to bekräftad, show email modal first
+    if (newStatus === "bekraftad" && status !== "bekraftad") {
+      setPendingStatus(newStatus);
+      setShowEmailModal(true);
+      return;
+    }
+
+    await doSaveStatus(newStatus);
+  }
+
+  async function doSaveStatus(newStatus) {
     setSaving(true);
     try {
       const updatedData = { ...(order.data || order), status: newStatus };
@@ -238,83 +355,100 @@ function OrderDetail({ order, onClose, onUpdate, inventory, setInventory }) {
   const flavors = d.flavorBreakdown ? Object.entries(d.flavorBreakdown).filter(([,q]) => parseInt(q) > 0) : [];
 
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(61,43,26,0.45)", zIndex:100, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
-      <div style={{ background:"white", borderRadius:20, width:"100%", maxWidth:560, maxHeight:"90vh", overflowY:"auto", boxShadow:"0 24px 80px rgba(61,43,26,0.25)" }}>
-        <div style={{ background:"#3d2b1a", borderRadius:"20px 20px 0 0", padding:"24px 28px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-          <div>
-            <div style={{ fontFamily:"'Playfair Display',serif", fontSize:20, fontWeight:700, color:"white" }}>{d.company||"—"}</div>
-            <div style={{ fontSize:12, color:"#c9a87a", marginTop:2 }}>Order #{order.id} · {fmtDate(d.createdAt||d.created_at)}</div>
-          </div>
-          <div style={{ display:"flex", gap:10, alignItems:"center" }}>
-            <button onClick={() => printFolljesedel(order)}
-              style={{ background:"#c97c3a", border:"none", borderRadius:10, color:"white", padding:"8px 14px", fontFamily:"'Lato',sans-serif", fontWeight:700, fontSize:12, cursor:"pointer" }}>
-              🖨️ Följesedel
-            </button>
-            <button onClick={onClose} style={{ background:"none", border:"none", color:"#c9a87a", fontSize:24, cursor:"pointer" }}>×</button>
-          </div>
-        </div>
-        <div style={{ padding:28 }}>
-          <div style={{ marginBottom:24 }}>
-            <div style={{ fontSize:11, color:"#9b7048", textTransform:"uppercase", letterSpacing:1, marginBottom:10, fontFamily:"'Lato',sans-serif" }}>
-              Status
-              {status === "ny" && flavors.length > 0 && <span style={{ color:"#6d9ee8", marginLeft:8, fontSize:11 }}>→ Bekräfta för att dra av frysbollar automatiskt</span>}
+    <>
+      <div style={{ position:"fixed", inset:0, background:"rgba(61,43,26,0.45)", zIndex:100, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
+        <div style={{ background:"white", borderRadius:20, width:"100%", maxWidth:560, maxHeight:"90vh", overflowY:"auto", boxShadow:"0 24px 80px rgba(61,43,26,0.25)" }}>
+          <div style={{ background:"#3d2b1a", borderRadius:"20px 20px 0 0", padding:"24px 28px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+            <div>
+              <div style={{ fontFamily:"'Playfair Display',serif", fontSize:20, fontWeight:700, color:"white" }}>{d.company||"—"}</div>
+              <div style={{ fontSize:12, color:"#c9a87a", marginTop:2 }}>Order #{order.id} · {fmtDate(d.createdAt||d.created_at)}</div>
             </div>
-            <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-              {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-                <button key={key} onClick={() => saveStatus(key)} disabled={saving}
-                  style={{ padding:"6px 14px", borderRadius:20, border:`2px solid ${key===status ? cfg.color : "#eadfc8"}`, background: key===status ? cfg.bg : "white", color: key===status ? cfg.color : "#9b7048", fontFamily:"'Lato',sans-serif", fontWeight:700, fontSize:12, cursor:"pointer" }}>
-                  {cfg.label}
-                </button>
+            <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+              <button onClick={() => setShowEmailModal(true)}
+                style={{ background:"#6d9ee8", border:"none", borderRadius:10, color:"white", padding:"8px 12px", fontFamily:"'Lato',sans-serif", fontWeight:700, fontSize:12, cursor:"pointer" }}>
+                📧 Skicka mail
+              </button>
+              <button onClick={() => printFolljesedel(order)}
+                style={{ background:"#c97c3a", border:"none", borderRadius:10, color:"white", padding:"8px 12px", fontFamily:"'Lato',sans-serif", fontWeight:700, fontSize:12, cursor:"pointer" }}>
+                🖨️ Följesedel
+              </button>
+              <button onClick={onClose} style={{ background:"none", border:"none", color:"#c9a87a", fontSize:24, cursor:"pointer" }}>×</button>
+            </div>
+          </div>
+          <div style={{ padding:28 }}>
+            <div style={{ marginBottom:24 }}>
+              <div style={{ fontSize:11, color:"#9b7048", textTransform:"uppercase", letterSpacing:1, marginBottom:10, fontFamily:"'Lato',sans-serif" }}>
+                Status
+                {status === "ny" && flavors.length > 0 && <span style={{ color:"#6d9ee8", marginLeft:8, fontSize:11 }}>→ Bekräfta för att skicka mail + dra av frysbollar</span>}
+              </div>
+              <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+                {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
+                  <button key={key} onClick={() => saveStatus(key)} disabled={saving}
+                    style={{ padding:"6px 14px", borderRadius:20, border:`2px solid ${key===status ? cfg.color : "#eadfc8"}`, background: key===status ? cfg.bg : "white", color: key===status ? cfg.color : "#9b7048", fontFamily:"'Lato',sans-serif", fontWeight:700, fontSize:12, cursor:"pointer" }}>
+                    {cfg.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14, marginBottom:20 }}>
+              {[["Kontakt",d.contact],["E-post",d.email],["Leveransdatum",fmtDate(d.deliveryDate)],["Typ",d.orderType==="subscription"?"Abonnemang":"Engång"]].map(([label,val]) => (
+                <div key={label} style={{ background:"#fdf8f0", borderRadius:10, padding:"12px 16px" }}>
+                  <div style={{ fontSize:11, color:"#9b7048", textTransform:"uppercase", letterSpacing:1, marginBottom:4, fontFamily:"'Lato',sans-serif" }}>{label}</div>
+                  <div style={{ fontSize:14, color:"#3d2b1a", fontWeight:600 }}>{val||"—"}</div>
+                </div>
               ))}
             </div>
-          </div>
 
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14, marginBottom:20 }}>
-            {[["Kontakt",d.contact],["E-post",d.email],["Leveransdatum",fmtDate(d.deliveryDate)],["Typ",d.orderType==="subscription"?"Abonnemang":"Engång"]].map(([label,val]) => (
-              <div key={label} style={{ background:"#fdf8f0", borderRadius:10, padding:"12px 16px" }}>
-                <div style={{ fontSize:11, color:"#9b7048", textTransform:"uppercase", letterSpacing:1, marginBottom:4, fontFamily:"'Lato',sans-serif" }}>{label}</div>
-                <div style={{ fontSize:14, color:"#3d2b1a", fontWeight:600 }}>{val||"—"}</div>
-              </div>
-            ))}
-          </div>
+            {d.productName && <div style={{ background:"#fdf8f0", borderRadius:10, padding:"12px 16px", marginBottom:16 }}>
+              <div style={{ fontSize:11, color:"#9b7048", textTransform:"uppercase", letterSpacing:1, marginBottom:4, fontFamily:"'Lato',sans-serif" }}>Produkt</div>
+              <div style={{ fontSize:14, color:"#3d2b1a", fontWeight:600 }}>{d.productName}</div>
+            </div>}
 
-          {d.productName && <div style={{ background:"#fdf8f0", borderRadius:10, padding:"12px 16px", marginBottom:16 }}>
-            <div style={{ fontSize:11, color:"#9b7048", textTransform:"uppercase", letterSpacing:1, marginBottom:4, fontFamily:"'Lato',sans-serif" }}>Produkt</div>
-            <div style={{ fontSize:14, color:"#3d2b1a", fontWeight:600 }}>{d.productName}</div>
-          </div>}
-
-          {flavors.length > 0 && (
-            <div style={{ marginBottom:16 }}>
-              <div style={{ fontSize:11, color:"#9b7048", textTransform:"uppercase", letterSpacing:1, marginBottom:8, fontFamily:"'Lato',sans-serif" }}>Smaker / Frysbollar</div>
-              {flavors.map(([flavor, qty]) => {
-                const flavorId = FLAVORS.find(f => f.name === flavor)?.id;
-                const inStock = flavorId !== undefined ? (inventory[flavorId] ?? 0) : null;
-                const willBeShort = inStock !== null && inStock < parseInt(qty);
-                return (
-                  <div key={flavor} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 0", borderBottom:"1px solid #f0e8d8" }}>
-                    <span style={{ fontSize:14, color:"#3d2b1a" }}>{flavor}</span>
-                    <div style={{ display:"flex", gap:16, alignItems:"center" }}>
-                      {inStock !== null && <span style={{ fontSize:12, color: willBeShort?"#e8806d":"#9b7048" }}>i frys: {inStock} st{willBeShort?" ⚠️":""}</span>}
-                      <span style={{ fontSize:14, color:"#9b7048", fontWeight:700 }}>−{qty} st</span>
+            {flavors.length > 0 && (
+              <div style={{ marginBottom:16 }}>
+                <div style={{ fontSize:11, color:"#9b7048", textTransform:"uppercase", letterSpacing:1, marginBottom:8, fontFamily:"'Lato',sans-serif" }}>Smaker / Frysbollar</div>
+                {flavors.map(([flavor, qty]) => {
+                  const flavorId = FLAVORS.find(f => f.name === flavor)?.id;
+                  const inStock = flavorId !== undefined ? (inventory[flavorId] ?? 0) : null;
+                  const willBeShort = inStock !== null && inStock < parseInt(qty);
+                  return (
+                    <div key={flavor} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 0", borderBottom:"1px solid #f0e8d8" }}>
+                      <span style={{ fontSize:14, color:"#3d2b1a" }}>{flavor}</span>
+                      <div style={{ display:"flex", gap:16, alignItems:"center" }}>
+                        {inStock !== null && <span style={{ fontSize:12, color: willBeShort?"#e8806d":"#9b7048" }}>i frys: {inStock} st{willBeShort?" ⚠️":""}</span>}
+                        <span style={{ fontSize:14, color:"#9b7048", fontWeight:700 }}>−{qty} st</span>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                  );
+                })}
+              </div>
+            )}
 
-          {d.price && <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", background:"#fdf8f0", borderRadius:10, padding:"14px 16px", marginBottom:16 }}>
-            <span style={{ fontSize:13, color:"#9b7048" }}>Totalt (exkl. moms)</span>
-            <span style={{ fontFamily:"'Playfair Display',serif", fontSize:22, fontWeight:700, color:"#c97c3a" }}>{Number(d.price).toLocaleString("sv-SE")} kr</span>
-          </div>}
+            {d.price && <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", background:"#fdf8f0", borderRadius:10, padding:"14px 16px", marginBottom:16 }}>
+              <span style={{ fontSize:13, color:"#9b7048" }}>Totalt (exkl. moms)</span>
+              <span style={{ fontFamily:"'Playfair Display',serif", fontSize:22, fontWeight:700, color:"#c97c3a" }}>{Number(d.price).toLocaleString("sv-SE")} kr</span>
+            </div>}
 
-          {d.notes && <div style={{ background:"#fdf6ec", borderLeft:"3px solid #c97c3a", borderRadius:"0 8px 8px 0", padding:"12px 16px" }}>
-            <div style={{ fontSize:11, color:"#9b7048", textTransform:"uppercase", letterSpacing:1, marginBottom:4, fontFamily:"'Lato',sans-serif" }}>Anteckningar</div>
-            <div style={{ fontSize:14, color:"#3d2b1a" }}>{d.notes}</div>
-          </div>}
+            {d.notes && <div style={{ background:"#fdf6ec", borderLeft:"3px solid #c97c3a", borderRadius:"0 8px 8px 0", padding:"12px 16px" }}>
+              <div style={{ fontSize:11, color:"#9b7048", textTransform:"uppercase", letterSpacing:1, marginBottom:4, fontFamily:"'Lato',sans-serif" }}>Anteckningar</div>
+              <div style={{ fontSize:14, color:"#3d2b1a" }}>{d.notes}</div>
+            </div>}
+          </div>
         </div>
       </div>
-    </div>
+
+      {showEmailModal && (
+        <ConfirmEmailModal
+          order={order}
+          onClose={() => { setShowEmailModal(false); setPendingStatus(null); }}
+          onSent={() => {
+            notify("Bekräftelsemail skickat! 📧");
+            if (pendingStatus) doSaveStatus(pendingStatus);
+          }}
+        />
+      )}
+    </>
   );
 }
 
@@ -644,7 +778,7 @@ export default function App() {
         {tab==="frysbollar" && <FrysbollarTab inventory={inventory} setInventory={setInventory} />}
       </div>
 
-      {selected && <OrderDetail order={selected} onClose={()=>setSelected(null)} onUpdate={handleStatusUpdate} inventory={inventory} setInventory={setInventory} />}
+      {selected && <OrderDetail order={selected} onClose={()=>setSelected(null)} onUpdate={handleStatusUpdate} inventory={inventory} setInventory={setInventory} notify={notify} />}
       {newForm && <NewOrderForm type={newForm} onClose={()=>setNewForm(null)} onSave={handleNewOrder} />}
     </div>
   );
