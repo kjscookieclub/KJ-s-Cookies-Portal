@@ -621,7 +621,13 @@ export default function App() {
   }
   function handleNewOrder(order){setOrders(prev=>[order,...prev]);notify("Beställning skapad!");}
 
-  const filtered=[...orders].sort((a,b)=>{ const da=getDate(a)||"9999"; const db=getDate(b)||"9999"; return da<db?-1:da>db?1:0; }).filter(o=>{
+  const filtered=[...orders].sort((a,b)=>{
+    const aLev=getStatus(a)==="levererad", bLev=getStatus(b)==="levererad";
+    if(aLev&&!bLev) return 1;
+    if(!aLev&&bLev) return -1;
+    const da=getDate(a)||"9999", db=getDate(b)||"9999";
+    return da<db?-1:da>db?1:0;
+  }).filter(o=>{
     if(filterStatus!=="alla"&&getStatus(o)!==filterStatus) return false;
     if(filterType!=="alla"&&getType(o)!==filterType) return false;
     if(searchQuery){const q=searchQuery.toLowerCase();if(!getCompany(o).toLowerCase().includes(q)&&!getContact(o).toLowerCase().includes(q))return false;}
