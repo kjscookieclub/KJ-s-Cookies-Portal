@@ -231,6 +231,17 @@ function OrderDetail({ order, onClose, onUpdate, inventory, setInventory, notify
     setSaving(false);
   }
 
+  async function handleDelete() {
+    if (!window.confirm("Är du säker på att du vill ta bort denna beställning?")) return;
+    setSaving(true);
+    try {
+      await dbFetch(\`/orders?id=eq.\${order.id}\`, { method:"DELETE" });
+      onUpdate(order.id, "__deleted__");
+      onClose();
+    } catch(e) { console.error(e); }
+    setSaving(false);
+  }
+
   function saveStatus(newStatus) {
     if (newStatus===status) return;
     if (newStatus==="bekraftad"&&status!=="bekraftad") { setPendingStatus(newStatus); setShowEmail(true); return; }
