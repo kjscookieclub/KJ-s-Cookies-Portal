@@ -244,8 +244,6 @@ function OrderDetail({ order, onClose, onUpdate, inventory, setInventory, notify
 
   function saveStatus(newStatus) {
     if (newStatus===status) return;
-    const d = order.data||order;
-    if (newStatus==="bekraftad"&&status!=="bekraftad"&&d.email) { setPendingStatus(newStatus); setShowEmail(true); return; }
     doSaveStatus(newStatus);
   }
 
