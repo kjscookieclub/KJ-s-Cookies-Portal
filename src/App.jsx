@@ -261,7 +261,10 @@ function OrderDetail({ order, onClose, onUpdate, inventory, setInventory, notify
                 <div style={{ fontFamily:"'Playfair Display',serif",fontSize:mobile?17:20,fontWeight:700,color:"white" }}>{d.company||"—"}</div>
                 <div style={{ fontSize:12,color:"#c9a87a",marginTop:2 }}>Order #{order.id} · {fmtDate(d.createdAt||d.created_at)}</div>
               </div>
-              <button onClick={onClose} style={{ background:"none",border:"none",color:"#c9a87a",fontSize:24,cursor:"pointer",padding:"0 0 0 12px",flexShrink:0 }}>×</button>
+              <div style={{ display:"flex",gap:8,alignItems:"center" }}>
+                <button onClick={handleDelete} disabled={saving} style={{ background:"#e86d6d",border:"none",borderRadius:10,color:"white",padding:"7px 12px",fontFamily:"'Lato',sans-serif",fontWeight:700,fontSize:12,cursor:"pointer" }}>🗑 Ta bort</button>
+                <button onClick={onClose} style={{ background:"none",border:"none",color:"#c9a87a",fontSize:24,cursor:"pointer",padding:"0 0 0 4px",flexShrink:0 }}>×</button>
+              </div>
             </div>
             <div style={{ display:"flex",gap:8,marginTop:14 }}>
               <button onClick={()=>setShowEmail(true)} style={{ flex:1,background:"#6d9ee8",border:"none",borderRadius:10,color:"white",padding:"9px 0",fontFamily:"'Lato',sans-serif",fontWeight:700,fontSize:13,cursor:"pointer" }}>📧 Skicka mail</button>
