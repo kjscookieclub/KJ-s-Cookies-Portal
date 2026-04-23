@@ -235,7 +235,7 @@ function OrderDetail({ order, onClose, onUpdate, inventory, setInventory, notify
     if (!window.confirm("Är du säker på att du vill ta bort denna beställning?")) return;
     setSaving(true);
     try {
-      await dbFetch(\`/orders?id=eq.\${order.id}\`, { method:"DELETE" });
+      await dbFetch(`/orders?id=eq.${order.id}`, { method:"DELETE" });
       onUpdate(order.id, "__deleted__");
       onClose();
     } catch(e) { console.error(e); }
